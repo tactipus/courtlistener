@@ -11,7 +11,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from django.db.models import IntegerField, Prefetch, QuerySet
+from django.db.models import IntegerField, Prefetch, QuerySet, Count, Sum
 from django.db.models.functions import Cast
 from django.http import HttpRequest, HttpResponseRedirect
 from django.http.response import (
@@ -96,6 +96,7 @@ from cl.search.models import (
     OpinionCluster,
     Parenthetical,
     RECAPDocument,
+    OpinionsCitedByRECAPDocument
 )
 from cl.search.selectors import get_clusters_from_citation_str
 from cl.search.views import do_es_search
@@ -537,12 +538,20 @@ async def docket_authorities(
     docket, context = await core_docket_data(request, docket_id)
     if not await docket.ahas_authorities():
         raise Http404("No authorities data for this docket at this time")
+    
+    cited = (
+        OpinionsCitedByRECAPDocument.objects
+            .filter(citing_document__docket_entry__docket_id=4214664)
+            .values("cited_opinion_id")
+            .annotate(opinion_count=Count('cited_opinion_id'), total_depth=Sum('depth'))
+    )
 
     context.update(
         {
             # Needed to show/hide parties tab.
             "parties": await docket.parties.aexists(),
             "docket_entries": await docket.docket_entries.aexists(),
+            "citedt": cited,
             "authorities": docket.authorities_with_data,
         }
     )
